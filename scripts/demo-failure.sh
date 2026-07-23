@@ -32,20 +32,24 @@ on_pod() {
   local pod="$1" lport="$2" action="$3"
   kubectl -n "$NS" port-forward "pod/${pod}" "${lport}:8000" >/dev/null 2>&1 &
   local pf=$!
-  trap 'kill "$pf" 2>/dev/null || true' RETURN
   local ok=""
   for _ in $(seq 1 40); do
     curl -sf -o /dev/null "http://127.0.0.1:${lport}/healthz" 2>/dev/null && { ok=1; break; }
     sleep 0.25
   done
-  [ -n "$ok" ] || { echo "  ! ${pod}: port-forward not ready" >&2; return 1; }
-  if [ "$action" = "reset" ]; then
-    curl -sS -X POST "http://127.0.0.1:${lport}/chaos/reset" && echo "  <- ${pod}"
+  if [ -n "$ok" ]; then
+    if [ "$action" = "reset" ]; then
+      curl -sS -X POST "http://127.0.0.1:${lport}/chaos/reset" && echo "  <- ${pod}"
+    else
+      curl -sS -X POST "http://127.0.0.1:${lport}/chaos/latency?ms=${LATENCY_MS}" >/dev/null
+      curl -sS -X POST "http://127.0.0.1:${lport}/chaos/errors?rate=${ERROR_RATE}" >/dev/null
+      echo "  <- ${pod}: latency=${LATENCY_MS}ms errors=${ERROR_RATE}"
+    fi
   else
-    curl -sS -X POST "http://127.0.0.1:${lport}/chaos/latency?ms=${LATENCY_MS}" >/dev/null
-    curl -sS -X POST "http://127.0.0.1:${lport}/chaos/errors?rate=${ERROR_RATE}" >/dev/null
-    echo "  <- ${pod}: latency=${LATENCY_MS}ms errors=${ERROR_RATE}"
+    echo "  ! ${pod}: port-forward not ready" >&2
   fi
+  kill "$pf" 2>/dev/null || true
+  wait "$pf" 2>/dev/null || true
 }
 
 apply_to_all() {
