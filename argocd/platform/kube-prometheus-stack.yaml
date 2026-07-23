@@ -13,6 +13,40 @@ spec:
       valuesObject:
         grafana:
           adminPassword: admin123   # fine for a local assessment
+          additionalDataSources:
+            - name: Loki
+              type: loki
+              uid: loki
+              access: proxy
+              url: http://loki.monitoring.svc.cluster.local:3100
+              jsonData:
+                # trace_id is emitted in the app's JSON logs; link it straight to Tempo
+                derivedFields:
+                  - name: trace_id
+                    matcherType: regex
+                    matcherRegex: '"trace_id":\s*"(\w+)"'
+                    url: '$${__value.raw}'
+                    datasourceUid: tempo
+                    urlDisplayLabel: View trace
+            - name: Tempo
+              type: tempo
+              uid: tempo
+              access: proxy
+              url: http://tempo.monitoring.svc.cluster.local:3100
+              jsonData:
+                serviceMap:
+                  datasourceUid: prometheus
+                nodeGraph:
+                  enabled: true
+                tracesToLogsV2:
+                  datasourceUid: loki
+                  spanStartTimeShift: -1h
+                  spanEndTimeShift: 1h
+                  filterByTraceID: true
+                  filterBySpanID: false
+                  tags:
+                    - key: service.name
+                      value: service_name
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
