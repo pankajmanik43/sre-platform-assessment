@@ -11,6 +11,13 @@ spec:
     targetRevision: 65.5.1
     helm:
       valuesObject:
+        prometheusOperator:
+          admissionWebhooks:
+            # validation-only webhook whose serving cert is set up by Helm hook Jobs;
+            # under ArgoCD + a saturated cold bootstrap the cert/caBundle can mismatch
+            # ("tls: bad certificate"), stalling CR reconciliation. Disable it — the
+            # operator still validates CRs at reconcile time.
+            enabled: false
         grafana:
           adminPassword: admin123   # fine for a local assessment
           additionalDataSources:
