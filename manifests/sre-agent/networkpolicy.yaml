@@ -21,6 +21,8 @@ spec:
         - { protocol: TCP, port: 9090 }
         - { protocol: TCP, port: 9093 }
         - { protocol: TCP, port: 3100 }
-    # HTTPS to the Kubernetes API server and api.anthropic.com
+    # api.anthropic.com over HTTPS (443) and the Kubernetes API server (service :443
+    # DNATs to the apiserver's real :6443, which the policy sees post-DNAT)
     - ports:
         - { protocol: TCP, port: 443 }
+        - { protocol: TCP, port: 6443 }
