@@ -80,7 +80,16 @@ kubectl create secret generic sre-agent-api-key -n sre-agent \
   --from-literal=ANTHROPIC_API_KEY=<your-key>
 ```
 
-**Time to green:** ~15 minutes on a cold cluster — image pulls (Temporal, kube-prometheus-stack) dominate.
+**Time to green:** ~10–15 minutes on a cold 4-vCPU cluster. Image pulls (Temporal,
+kube-prometheus-stack) dominate, and **CPU saturation during the initial pulls is
+normal** — the single node is briefly maxed while it unpacks images and starts
+everything. Sync waves stagger the pulls (LGTM stack first, Temporal last), but it
+still churns. Just watch until it settles:
+```bash
+watch kubectl get pods -A     # wait until nothing is Pending / ContainerCreating / CrashLoopBackOff
+```
+A few restarts on the Temporal pods during the first minutes (while Postgres comes
+up) are expected and self-heal.
 
 **Verify:**
 ```bash
@@ -149,6 +158,7 @@ service incident separate from baseline k3d control-plane noise.
 | **Grafana Alloy** for logs, not Promtail | Promtail is EOL; Alloy is Grafana's successor. DaemonSet tails `/var/log/pods` → Loki. |
 | Alloy as **root, zero capabilities** | Pod logs are `0640 root:root`, so uid 0 is needed to read them — but via file *ownership*, so all caps are dropped, rootfs + the `/var/log` mount are read-only, and priv-esc is off. Non-root would need `CAP_DAC_READ_SEARCH`, a broader grant. |
 | **Temporal on bundled PostgreSQL** (dev) | A single-instance postgres (`emptyDir`) via the Temporal Helm chart — a dev datastore. Prod would use HA Postgres/Aurora + Elasticsearch visibility. |
+| Temporal tuned down for local | `numHistoryShards: 4` (prod default is 512) and trimmed requests. 512 shards run 512 shard controllers and saturate a single-node cluster; 4 is ample for a health-check workflow. Prod uses 512+ across dedicated history nodes. |
 | **Sealed Secrets** for the agent key | The key is encrypted in git and unsealed in-cluster. SealedSecrets are cluster-specific, so a reviewer on a fresh cluster creates their own Secret (quickstart step 3). |
 | Grafana admin password inline | `admin123`, local-only convenience — the one deliberately un-sealed secret. |
 

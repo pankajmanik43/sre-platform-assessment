@@ -4,7 +4,7 @@ metadata:
   name: temporal-healthcheck
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "3"   # after the temporal frontend (2) is available
+    argocd.argoproj.io/sync-wave: "6"   # after the temporal frontend (wave 5) is available
 spec:
   project: default
   source:

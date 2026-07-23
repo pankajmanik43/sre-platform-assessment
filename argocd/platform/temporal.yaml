@@ -4,7 +4,9 @@ metadata:
   name: temporal
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "2"   # after temporal-db (1); schema jobs run as PreSync hooks
+    # deploy AFTER the LGTM stack (wave 0) + apps so a cold bootstrap staggers the
+    # (large) image pulls instead of saturating the single node all at once
+    argocd.argoproj.io/sync-wave: "5"
 spec:
   project: default
   source:
@@ -27,7 +29,8 @@ spec:
             persistence:
               defaultStore: default
               visibilityStore: visibility
-              numHistoryShards: 512
+              numHistoryShards: 4   # local dev: 512 (prod default) runs 512 shard
+                                    # controllers and saturates a single-node cluster
               datastores:
                 default:
                   sql:
@@ -51,20 +54,20 @@ spec:
                     maxConnLifetime: 1h
           frontend:
             resources:
-              requests: { cpu: 50m, memory: 128Mi }
+              requests: { cpu: 25m, memory: 128Mi }
               limits: { memory: 256Mi }
           history:
             resources:
-              requests: { cpu: 50m, memory: 256Mi }
-              limits: { memory: 512Mi }
+              requests: { cpu: 25m, memory: 192Mi }
+              limits: { memory: 384Mi }
           matching:
             resources:
-              requests: { cpu: 50m, memory: 128Mi }
-              limits: { memory: 256Mi }
+              requests: { cpu: 25m, memory: 96Mi }
+              limits: { memory: 192Mi }
           worker:
             resources:
-              requests: { cpu: 50m, memory: 128Mi }
-              limits: { memory: 256Mi }
+              requests: { cpu: 25m, memory: 96Mi }
+              limits: { memory: 192Mi }
         admintools:
           resources:
             requests: { cpu: 10m, memory: 64Mi }
