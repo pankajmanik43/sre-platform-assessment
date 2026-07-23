@@ -3,18 +3,16 @@
 ## Current state
 - k3d cluster, ArgoCD v3.4.5, root app (app-of-apps) at argocd/platform/
 - kube-prometheus-stack, loki, tempo: Synced/Healthy in monitoring namespace
+- Grafana datasources: Loki + Tempo added via kps values; Loki derived field trace_id -> Tempo,
+  Tempo tracesToLogs -> Loki (service.name -> service_name), service map + node graph. Verified via API.
+- Grafana Alloy DaemonSet (chart 1.11.0) ships pod logs to Loki (not in original plan — needed for
+  "logs in Grafana"; reads /var/log/pods, strips CRI, labels service_name from app.kubernetes.io/name)
+- Wave-0 namespaces apps/temporal/sre-agent: PSA labels + default-deny + allow-dns baseline NetworkPolicies
+- orders-api (apps ns) live: 2 replicas Healthy, RED metrics scraped (incl. 500s), OTLP traces in Tempo
+  (with db.query.orders child span), JSON logs in Loki with trace_id. load-generator at 1 req/s.
+  Image is locally built + k3d-imported via scripts/build-orders-api.sh.
 
 ## Remaining build order
-1. Grafana datasources for Loki + Tempo via kps values; derived fields linking trace_id in logs to Tempo traces
-2. Wave-0: namespaces (apps, temporal, sre-agent) with labels + baseline NetworkPolicies
-3. Sample API "orders-api" (apps namespace): FastAPI + OTel
-   - GET /healthz, /readyz, /api/orders (fake db call span, 5-20ms), POST /api/orders (0.5% baked-in 500s)
-   - /chaos/latency?ms=, /chaos/errors?rate=, /chaos/reset
-   - Metrics: prometheus_client — http_requests_total{path,method,status}, http_request_duration_seconds histogram
-   - Traces: OTel auto-instrumentation, OTLP/gRPC direct to Tempo (no collector — note in README)
-   - Logs: structlog JSON to stdout with trace_id/span_id injected
-   - Manifests: 2 replicas, requests/limits (no CPU limit — document why), probes, securityContext, PDB, NetworkPolicy
-   - load-generator Deployment hitting /api/orders every 1s
 4. SLO + alert: recording rules for availability SLI (1 - 5xx/total on /api/orders), 99.5% target, multiwindow burn-rate alert (5m + 1h)
 5. One hand-built Grafana dashboard as ConfigMap: RED metrics, error budget, logs panel, trace links
 6. Temporal via Helm (bundled PostgreSQL dev config — document why), one health-check workflow
@@ -29,6 +27,7 @@
 - k3d over VM k3s (reviewers need only Docker)
 - Plain Prometheus, no Mimir (single-node; would use Mimir/Thanos multi-cluster)
 - No OTel Collector locally (prod: DaemonSet with tail sampling)
+- Grafana Alloy for log shipping (promtail is EOL); DaemonSet reading /var/log/pods off the node
 - No CPU limits (throttling; requests handle scheduling)
 - Temporal on bundled PostgreSQL
 - Sealed Secrets for agent API key; grafana admin password left simple for local (noted)
