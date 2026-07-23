@@ -1,0 +1,15 @@
+---
+apiVersion: bitnami.com/v1alpha1
+kind: SealedSecret
+metadata:
+  creationTimestamp: null
+  name: sre-agent-api-key
+  namespace: sre-agent
+spec:
+  encryptedData:
+    ANTHROPIC_API_KEY: AgB15k1uGzFB5X7p0cR4mWkrMP4Wzslj1kb6F+m2y6UJ1myjb9UeePjjN413UKWbKnBXINLWzwVcqZt92cf00pjxgs2BbKiFEFQySN23ahkRIjKs04xZdjtPum5lckPU1FSWgDh/0rSrovxJUYPpy0msxr6AGRVza4+COrgwQiOr9iURlJfV5amIXCSsLIf+76IpITZ5rBSlakncTdZcOQ9KHJ4lY6t2/XaSV42pFBHbbwUK77itIZ8aq0tMjKG0BlXW42ku2URPIe5wMaQyKQbtffhxY+Numy5nrfEIEoN/X9zgcR2G5kYb+lFQWOAYTaOT4jsyqW/codrizre9KtLn++IELRZ8gaQK0+9sFRIXwC5837N47TojHMs4VuXr8a/kZPQweFgMqJwIfuEQFWoI9X+7ND7OkKqDQZLze02wZMLyogcXud2ZYuMZquga5hKRXn36Ob3uAt4hRjhpoo0S1EP4BHqX+hiEtlb/611hhdGVcbhYp286Kx5T09nn57zIP/9eNqD1FSoeVxe/14WaCHUKSuUfLxSEu01/NElkwKVWX8wIWpvqCIAyG/AMW5vwiGor4Xj0eD5MnE7L2RiJEC4aLjavrwPwTnY+KfoQ40c7L52X32ngfyPQX3UIDulOx5buhnvCTAlPyUQLV9wIR4XZIRrg4EZM3EMwkYBdveV/JsbDL7Hg650/W7LyRFqC8WtfKkXGYPUKwTYAOK8xjTcwLIaUH5Vah04rGZ4Qd0J1F/qcEGasmITQaE4ZGcYIZKxO0CUpBXYwW88O+exq7iUvYNGEH7lhN12uZCsDZeA8A41aj2JX6OhGsKAVMJ2KvTekCzYMoQCriro=
+  template:
+    metadata:
+      creationTimestamp: null
+      name: sre-agent-api-key
+      namespace: sre-agent
