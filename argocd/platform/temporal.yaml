@@ -1,0 +1,83 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: temporal
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"   # after temporal-db (1); schema jobs run as PreSync hooks
+spec:
+  project: default
+  source:
+    repoURL: https://go.temporal.io/helm-charts
+    chart: temporal
+    targetRevision: 1.6.0
+    helm:
+      # bundled single-instance PostgreSQL dev datastore (see manifests/temporal-db);
+      # elasticsearch/prometheus/grafana subcharts are gone in this chart line.
+      valuesObject:
+        server:
+          replicaCount: 1
+          config:
+            logLevel: info
+            namespaces:
+              create: true
+              namespace:
+                - name: default
+                  retention: 1d
+            persistence:
+              defaultStore: default
+              visibilityStore: visibility
+              numHistoryShards: 512
+              datastores:
+                default:
+                  sql:
+                    pluginName: postgres12
+                    connectAddr: temporal-postgres:5432
+                    connectProtocol: tcp
+                    user: temporal
+                    password: temporal   # dev-only, matches manifests/temporal-db
+                    databaseName: temporal
+                    maxConns: 20
+                    maxConnLifetime: 1h
+                visibility:
+                  sql:
+                    pluginName: postgres12
+                    connectAddr: temporal-postgres:5432
+                    connectProtocol: tcp
+                    user: temporal
+                    password: temporal
+                    databaseName: temporal_visibility
+                    maxConns: 20
+                    maxConnLifetime: 1h
+          frontend:
+            resources:
+              requests: { cpu: 50m, memory: 128Mi }
+              limits: { memory: 256Mi }
+          history:
+            resources:
+              requests: { cpu: 50m, memory: 256Mi }
+              limits: { memory: 512Mi }
+          matching:
+            resources:
+              requests: { cpu: 50m, memory: 128Mi }
+              limits: { memory: 256Mi }
+          worker:
+            resources:
+              requests: { cpu: 50m, memory: 128Mi }
+              limits: { memory: 256Mi }
+        admintools:
+          resources:
+            requests: { cpu: 10m, memory: 64Mi }
+            limits: { memory: 128Mi }
+        web:
+          enabled: true
+          resources:
+            requests: { cpu: 10m, memory: 64Mi }
+            limits: { memory: 128Mi }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: temporal
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

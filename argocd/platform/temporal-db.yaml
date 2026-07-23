@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: temporal-db
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"   # postgres must be ready before temporal's schema hooks (wave 2)
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/pankajmanik43/sre-platform-assessment.git
+    targetRevision: main
+    path: manifests/temporal-db
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: temporal
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
