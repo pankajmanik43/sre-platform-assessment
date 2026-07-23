@@ -15,15 +15,15 @@
 - SLO: PrometheusRule orders-api-slo — 5m/1h error-ratio + 30d availability/error-budget recording rules;
   multiwindow burn-rate alert OrdersApiErrorBudgetFastBurn (14.4x on 1h AND 5m). Loaded + health=ok.
 - Grafana dashboard "orders-api" (ConfigMap, sidecar-loaded): RED, availability, error budget gauge, logs+trace links.
-- scripts/demo-failure.sh: deterministic chaos on all replicas via per-pod port-forward (verified on both pods).
+- scripts/demo-failure.sh: full incident demo — deterministic chaos on all replicas -> burn alert ->
+  run agent -> save RCA -> reset. Verified end-to-end (real RCA in docs/rca-report-example.md).
+- Sealed Secrets: vendored controller v0.38.4; agent Anthropic key delivered as a SealedSecret.
+- AI SRE agent (chunk 7) DONE: suspended CronJob in sre-agent ns, read-only RBAC (get/list pods+events
+  in apps), NetworkPolicy (monitoring + apiserver :6443 + Anthropic :443). All 5 collectors verified;
+  one claude-opus-4-8 call (adaptive thinking) -> full RCA. Demo produced a real, well-grounded report.
 
 ## Remaining build order
-6. Temporal via Helm (bundled PostgreSQL dev config — document why), one health-check workflow
-7. AI SRE agent (sre-agent namespace): Python CLI as K8s Job
-   - Deterministic collectors: Alertmanager firing alerts, Prometheus (error rate, latency, restarts, burn rate), Loki error logs (cap 200 lines), Tempo slow/errored traces, K8s events
-   - One-two Claude API calls → structured RCA markdown (Summary/Timeline/Root Cause+confidence/Evidence/Blast Radius/Remediation/Unknown)
-   - Read-only RBAC, API key via Sealed Secret, token budget via evidence truncation
-   - scripts/demo-failure.sh: chaos latency injection → burn alert → run agent → commit RCA to docs/rca-report-example.md
+6. Temporal via Helm (bundled PostgreSQL dev config — document why), one health-check workflow  [skipped for now]
 8. README: quickstart, mermaid architecture diagram, design decisions table, agent section, roadmap
 
 ## Design decisions to document
