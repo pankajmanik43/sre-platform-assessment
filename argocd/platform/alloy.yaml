@@ -16,10 +16,21 @@ spec:
         alloy:
           # read the node's pod logs off /var/log and push them to Loki
           mounts:
-            varlog: true
+            varlog: true   # chart mounts /var/log read-only
+            extra:
+              - name: alloy-data
+                mountPath: /tmp/alloy   # writable WAL/storage so rootfs can stay read-only
           securityContext:
+            # pod logs are 0640 root:root, so uid 0 is required to read them — but it reads
+            # via file ownership, so every capability can be dropped. See README design decisions.
             runAsUser: 0
             runAsGroup: 0
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
           resources:
             requests:
               cpu: 25m
@@ -79,6 +90,21 @@ spec:
                   url = "http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push"
                 }
               }
+        configReloader:
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+        controller:
+          volumes:
+            extra:
+              - name: alloy-data
+                emptyDir: {}
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
