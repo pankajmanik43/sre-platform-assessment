@@ -20,6 +20,12 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: load-generator     # in-namespace client
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: temporal
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: temporal-healthcheck   # scheduled /healthz probe
       ports:
         - protocol: TCP
           port: 8000
