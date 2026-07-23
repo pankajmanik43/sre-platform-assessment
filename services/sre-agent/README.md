@@ -28,8 +28,19 @@ metrics, log lines, trace IDs) · Blast Radius · Remediation (immediate + preve
 - **Read-only RBAC** — a ClusterRole with `get`/`list` on `pods` and `events` only,
   bound (via RoleBinding) to the `apps` namespace. No write access anywhere.
 - **API key via Sealed Secret** — the Anthropic key is delivered as a
-  `SealedSecret` (encrypted in git, decrypted in-cluster by the sealed-secrets
+  `SealedSecret` (`manifests/sre-agent/sealed-api-key.yaml`, encrypted in git,
+  decrypted in-cluster into the `sre-agent-api-key` Secret by the sealed-secrets
   controller). The plaintext key never lands in the repo.
+
+  > **Reviewers bootstrapping a fresh cluster:** a `SealedSecret` is encrypted
+  > against *this* cluster's controller keypair, so the committed one will not
+  > decrypt on your cluster. Create your own Secret instead (the Job reads the
+  > same name/key):
+  > ```
+  > kubectl create secret generic sre-agent-api-key -n sre-agent \
+  >   --from-literal=ANTHROPIC_API_KEY=<your-key>
+  > ```
+  > (Or re-seal your key with `kubeseal` and replace `sealed-api-key.yaml`.)
 - **NetworkPolicy** — egress limited to the monitoring backends and HTTPS (Kubernetes
   API + `api.anthropic.com`); default-deny otherwise.
 - Non-root, read-only root filesystem, all capabilities dropped.

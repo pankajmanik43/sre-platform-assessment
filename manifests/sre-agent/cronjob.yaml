@@ -35,8 +35,8 @@ spec:
                 - name: ANTHROPIC_API_KEY
                   valueFrom:
                     secretKeyRef:
-                      name: sre-agent-anthropic
-                      key: api-key
+                      name: sre-agent-api-key
+                      key: ANTHROPIC_API_KEY
               resources:
                 requests:
                   cpu: 50m
