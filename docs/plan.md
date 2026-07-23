@@ -11,10 +11,13 @@
 - orders-api (apps ns) live: 2 replicas Healthy, RED metrics scraped (incl. 500s), OTLP traces in Tempo
   (with db.query.orders child span), JSON logs in Loki with trace_id. load-generator at 1 req/s.
   Image is locally built + k3d-imported via scripts/build-orders-api.sh.
+- Alloy hardened: uid 0 (pod logs are 0640 root:root) but all caps dropped, read-only rootfs + /var/log mount.
+- SLO: PrometheusRule orders-api-slo — 5m/1h error-ratio + 30d availability/error-budget recording rules;
+  multiwindow burn-rate alert OrdersApiErrorBudgetFastBurn (14.4x on 1h AND 5m). Loaded + health=ok.
+- Grafana dashboard "orders-api" (ConfigMap, sidecar-loaded): RED, availability, error budget gauge, logs+trace links.
+- scripts/demo-failure.sh: deterministic chaos on all replicas via per-pod port-forward (verified on both pods).
 
 ## Remaining build order
-4. SLO + alert: recording rules for availability SLI (1 - 5xx/total on /api/orders), 99.5% target, multiwindow burn-rate alert (5m + 1h)
-5. One hand-built Grafana dashboard as ConfigMap: RED metrics, error budget, logs panel, trace links
 6. Temporal via Helm (bundled PostgreSQL dev config — document why), one health-check workflow
 7. AI SRE agent (sre-agent namespace): Python CLI as K8s Job
    - Deterministic collectors: Alertmanager firing alerts, Prometheus (error rate, latency, restarts, burn rate), Loki error logs (cap 200 lines), Tempo slow/errored traces, K8s events
