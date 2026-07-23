@@ -1,0 +1,63 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: orders-api-slo
+  namespace: apps
+  labels:
+    app.kubernetes.io/name: orders-api
+    release: kube-prometheus-stack   # matched by the kps Prometheus ruleSelector
+spec:
+  groups:
+    - name: orders-api.slo.rules
+      # SLI = availability on /api/orders = 1 - (5xx / total). SLO target = 99.5% -> budget = 0.5%.
+      rules:
+        - record: orders_api:requests:rate5m
+          expr: sum(rate(http_requests_total{job="orders-api", path="/api/orders"}[5m]))
+        - record: orders_api:errors:rate5m
+          expr: sum(rate(http_requests_total{job="orders-api", path="/api/orders", status=~"5.."}[5m]))
+        - record: orders_api:error_ratio:rate5m
+          expr: orders_api:errors:rate5m / orders_api:requests:rate5m
+
+        - record: orders_api:requests:rate1h
+          expr: sum(rate(http_requests_total{job="orders-api", path="/api/orders"}[1h]))
+        - record: orders_api:errors:rate1h
+          expr: sum(rate(http_requests_total{job="orders-api", path="/api/orders", status=~"5.."}[1h]))
+        - record: orders_api:error_ratio:rate1h
+          expr: orders_api:errors:rate1h / orders_api:requests:rate1h
+
+        # dashboard SLIs over a rolling 30d window
+        - record: orders_api:availability:ratio30d
+          expr: |
+            1 - (
+              sum(increase(http_requests_total{job="orders-api", path="/api/orders", status=~"5.."}[30d]))
+              /
+              sum(increase(http_requests_total{job="orders-api", path="/api/orders"}[30d]))
+            )
+        - record: orders_api:error_budget_remaining:ratio30d
+          expr: |
+            1 - (
+              (
+                sum(increase(http_requests_total{job="orders-api", path="/api/orders", status=~"5.."}[30d]))
+                /
+                sum(increase(http_requests_total{job="orders-api", path="/api/orders"}[30d]))
+              ) / 0.005
+            )
+
+    - name: orders-api.slo.alerts
+      rules:
+        # Multiwindow burn-rate page: 14.4x burn (2% of the 30d budget in 1h) sustained on the
+        # 1h window AND confirmed still-active on the 5m window. 14.4 * 0.005 = 0.072.
+        - alert: OrdersApiErrorBudgetFastBurn
+          expr: |
+            orders_api:error_ratio:rate1h > (14.4 * 0.005)
+            and
+            orders_api:error_ratio:rate5m > (14.4 * 0.005)
+          for: 2m
+          labels:
+            severity: critical
+            service: orders-api
+          annotations:
+            summary: orders-api is burning its error budget fast (>14.4x)
+            description: >
+              5xx ratio on /api/orders exceeds 7.2% over both the 1h and 5m windows.
+              At this rate the 30-day 99.5% error budget is exhausted in ~2 days.
