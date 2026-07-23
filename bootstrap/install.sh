@@ -2,7 +2,7 @@
 set -euo pipefail
 
 CLUSTER_NAME="sre-assessment"
-ARGOCD_VERSION="v2.11.7"
+ARGOCD_VERSION="v3.4.5"
 
 # k3d = k3s in docker; only prerequisite for reviewers is docker itself
 if ! command -v k3d &>/dev/null; then
@@ -18,7 +18,7 @@ fi
 kubectl wait --for=condition=Ready node --all --timeout=120s
 
 kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
-kubectl apply -n argocd -f \
+kubectl apply -n argocd --server-side -f \
   "https://raw.githubusercontent.com/argoproj/argo-cd/${ARGOCD_VERSION}/manifests/install.yaml"
 kubectl -n argocd wait --for=condition=Available deploy/argocd-server --timeout=300s
 
