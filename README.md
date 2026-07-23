@@ -159,7 +159,7 @@ service incident separate from baseline k3d control-plane noise.
 | Alloy as **root, zero capabilities** | Pod logs are `0640 root:root`, so uid 0 is needed to read them — but via file *ownership*, so all caps are dropped, rootfs + the `/var/log` mount are read-only, and priv-esc is off. Non-root would need `CAP_DAC_READ_SEARCH`, a broader grant. |
 | **Temporal on bundled PostgreSQL** (dev) | A single-instance postgres (`emptyDir`) via the Temporal Helm chart — a dev datastore. Prod would use HA Postgres/Aurora + Elasticsearch visibility. |
 | Temporal tuned down for local | `numHistoryShards: 4` (prod default is 512) and trimmed requests. 512 shards run 512 shard controllers and saturate a single-node cluster; 4 is ample for a health-check workflow. Prod uses 512+ across dedicated history nodes. |
-| **Sealed Secrets** for the agent key | The key is encrypted in git and unsealed in-cluster. SealedSecrets are cluster-specific, so a reviewer on a fresh cluster creates their own Secret (quickstart step 3). |
+| **Sealed Secrets** for the agent key | The controller is deployed and the key is sealed (never plaintext in git). A `SealedSecret` is encrypted against one cluster's keypair, so it can't be a portable synced resource — reviewers create the Secret directly (quickstart step 3) or seal their own against their cluster (`docs/examples/sealed-api-key.example.yaml`). |
 | Grafana admin password inline | `admin123`, local-only convenience — the one deliberately un-sealed secret. |
 
 ## Repo layout
