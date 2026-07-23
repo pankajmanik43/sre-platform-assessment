@@ -89,7 +89,11 @@ still churns. Just watch until it settles:
 watch kubectl get pods -A     # wait until nothing is Pending / ContainerCreating / CrashLoopBackOff
 ```
 A few restarts on the Temporal pods during the first minutes (while Postgres comes
-up) are expected and self-heal.
+up) are expected and self-heal. Likewise, the locally-built workloads
+(`orders-api`, `temporal-healthcheck`) may briefly show `ImagePullBackOff` — ArgoCD
+(step 1) starts deploying them before `build-images` (step 2) has imported their
+images; they recover automatically once the import lands. `build-images.sh`
+verifies each import and retries, so a silent k3d import flake self-corrects.
 
 **Verify:**
 ```bash
