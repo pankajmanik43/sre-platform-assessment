@@ -68,6 +68,13 @@ spec:
             resources:
               requests: { cpu: 25m, memory: 96Mi }
               limits: { memory: 192Mi }
+        schema:
+          # Run schema setup + the DB-password secrets as plain ArgoCD-managed
+          # resources, NOT Helm hooks. ArgoCD deletes/recreates hook resources on
+          # every sync (hook-delete-policy: before-hook-creation), which
+          # transiently removes the store-password secrets the server pods mount
+          # -> CreateContainerConfigError. Plain resources stay put.
+          useHelmHooks: false
         admintools:
           resources:
             requests: { cpu: 10m, memory: 64Mi }
