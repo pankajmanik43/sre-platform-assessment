@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sre-agent
+  namespace: sre-agent
+  labels:
+    app.kubernetes.io/name: sre-agent
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: sre-agent
+  policyTypes:
+    - Egress
+  egress:
+    # observability backends: prometheus 9090, alertmanager 9093, loki + tempo 3100
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+      ports:
+        - { protocol: TCP, port: 9090 }
+        - { protocol: TCP, port: 9093 }
+        - { protocol: TCP, port: 3100 }
+    # HTTPS to the Kubernetes API server and api.anthropic.com
+    - ports:
+        - { protocol: TCP, port: 443 }
