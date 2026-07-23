@@ -1,0 +1,33 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: orders-api
+  namespace: apps
+  labels:
+    app.kubernetes.io/name: orders-api
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: orders-api
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring   # prometheus scrape
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: load-generator     # in-namespace client
+      ports:
+        - protocol: TCP
+          port: 8000
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring    # OTLP traces -> tempo:4317
+      ports:
+        - protocol: TCP
+          port: 4317

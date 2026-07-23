@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: load-generator
+  namespace: apps
+  labels:
+    app.kubernetes.io/name: load-generator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: load-generator
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: load-generator
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: load-generator
+          image: curlimages/curl:8.11.1
+          # steady 1 req/s at the Service; every 5th call is a POST to exercise the 0.5% 500s
+          command:
+            - /bin/sh
+            - -c
+            - |
+              i=0
+              while true; do
+                i=$((i+1))
+                if [ $((i % 5)) -eq 0 ]; then
+                  curl -sS -o /dev/null -X POST http://orders-api.apps.svc.cluster.local/api/orders
+                else
+                  curl -sS -o /dev/null http://orders-api.apps.svc.cluster.local/api/orders
+                fi
+                sleep 1
+              done
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: load-generator
+  namespace: apps
+  labels:
+    app.kubernetes.io/name: load-generator
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: load-generator
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: orders-api
+      ports:
+        - protocol: TCP
+          port: 8000
