@@ -95,6 +95,12 @@ up) are expected and self-heal. Likewise, the locally-built workloads
 images; they recover automatically once the import lands. `build-images.sh`
 verifies each import and retries, so a silent k3d import flake self-corrects.
 
+> **If `kube-prometheus-stack` stays `Progressing` with no `prometheus-…-0` pod**
+> after several minutes: under heavy CPU contention the operator can start before
+> its CRDs are established and miss the Prometheus CR. It's harmless — bounce it:
+> `kubectl -n monitoring rollout restart deploy/kube-prometheus-stack-operator`.
+> On an unloaded node this doesn't occur.
+
 **Verify:**
 ```bash
 kubectl -n argocd get applications           # every app: Synced / Healthy
