@@ -1,0 +1,22 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: namespaces
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"   # namespaces + baseline policies before any workload
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/pankajmanik43/sre-platform-assessment.git
+    targetRevision: main
+    path: manifests/namespaces
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: default
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
