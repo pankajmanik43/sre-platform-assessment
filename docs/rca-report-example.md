@@ -1,58 +1,50 @@
 # RCA: orders-api
 
 ## Summary
-`orders-api` is returning HTTP 500 on effectively 100% of `/api/orders` traffic (`error_ratio_5m: 1.0`), triggering the critical `OrdersApiErrorBudgetFastBurn` page at a ~200x burn rate. The 30-day SLO is already blown (`availability_ratio_30d: 0.9653` vs. 0.995 target; `error_budget_remaining_30d: -5.93973`). The most probable trigger is a deliberate error-injection ("chaos") fault, evidenced by a `POST /chaos/errors` trace and the near-uniform ~500 ms failure signature.
+`orders-api` is returning HTTP 500 on ~75.7% of `/api/orders` requests (`error_ratio_5m` and `error_ratio_1h` both `0.75701`), burning the 99.5% error budget at **151.4x** — far above the 14.4x page threshold. The 30-day availability has collapsed to `0.24299` and the error budget is fully exhausted (`error_budget_remaining_30d: -150.40179`). Both GET and POST to `/api/orders` are affected across both service replicas.
 
 ## Timeline
-- **2026-07-23T06:02:02Z** — `Watchdog` active (expected; alerting pipeline healthy).
-- **2026-07-23T06:16:40–06:16:41Z** — `KubeProxyDown`, `KubeControllerManagerDown`, `KubeSchedulerDown` fire (control-plane scrape targets missing).
-- **2026-07-23T09:39:09Z** — `KubeAPIErrorBudgetBurn` (warning) fires.
-- **2026-07-23T11:24:07–11:24:13Z** — Earliest readiness/liveness probe timeouts on both pods (`gltm4`, `h6p6x`).
-- **2026-07-23T11:36:38Z** — Earliest 500 in the provided log window (`trace_id 52a2c517f11b7ac5d176bf3a6704bda9`).
-- **2026-07-23T11:37:07Z** — Last readiness-probe failure recorded on `h6p6x` (count 19).
-- **2026-07-23T11:40:05Z** — Last liveness-probe failure on `gltm4` (count 11).
-- **2026-07-23T11:41:16.327Z** — `OrdersApiErrorBudgetFastBurn` (critical) fires (>14.4x burn).
-- **2026-07-23T11:41:50Z** — Latest 500 in the log window (`trace_id 3ffff07aef925bf171daae3e11aa92e7`).
+- **2026-07-23 17:51:43–17:51:44** — Both pods refuse connections on their probes: `Liveness probe failed ... dial tcp 10.42.0.31:8000: connect: connection refused` (Pod `orders-api-84dbfcdd9b-rxdgs`) and the equivalent readiness failure on `10.42.0.30:8000` (Pod `...-c9gcw`).
+- **2026-07-23 17:53:52–17:55:34** — Probe failures shift to timeouts: `Liveness probe failed ... context deadline exceeded` (count 6 on `c9gcw`, last 17:55:34) and matching readiness timeouts on both pods.
+- **2026-07-23 18:11:11.295Z** — `Watchdog` alert active (pipeline health only, not incident-related).
+- **2026-07-23 18:11:42.210Z** — Earliest 500 in the log sample (trace_id `2b5dd53b840e6e0e14ea3e304bc968c8`).
+- **2026-07-23 18:14:32.780Z** — `OrdersApiErrorBudgetFastBurn` fires (critical): "5xx ratio on /api/orders exceeds 7.2% over both the 1h and 5m windows."
+- **2026-07-23 18:14:42.371Z** — Latest 500 in the log sample (trace_id `cc02439ca6cfb1e18c16f778a672a708`).
 
 ## Root Cause
-Most likely a **deliberate fault/error injection into `orders-api`** (chaos experiment) producing constant HTTP 500s. **Confidence: Medium.**
+The `/api/orders` request handler is failing on an outbound/downstream call, returning 500 to clients. Trace `994988a9ec2b50ed28a614eb6c1673fd` shows the root span `GET /api/orders` with `status: STATUS_CODE_ERROR` (503.8 ms) and a child span `GET /api/orders http send` also `STATUS_CODE_ERROR` (0.05 ms), with additional `http send` child spans present — consistent with a failed dependency call inside the handler. Every failing request completes in a tightly clustered ~500 ms band (e.g., `500.54`, `500.60`, `501.62`, up to `526`), which points to a fixed timeout/delay on that dependency call rather than random failures. Latency percentiles pinned just under this ceiling (`p95 0.9682s`, `p99 0.99364s`) reinforce a bounded-wait-then-fail pattern.
 
-Why:
-- A trace named **`POST /chaos/errors`** (`traceID fd1de625301b1a957702d2540f7ffe03`, 1339 ms) appears in `slow_traces` — an explicit error-injection endpoint exposed by the service.
-- The failure signature is highly uniform: nearly every 500 log entry has `duration_ms` clustered tightly around **~500 ms** (e.g., 500.55–602.79 ms), consistent with a fixed injected delay-then-fail rather than variable downstream latency.
-- Span breakdown for errored traces (`686323b5…`, `cfc2532d…`) shows the root `GET /api/orders` span at `STATUS_CODE_ERROR` (~501–521 ms) with only trivial `http send` child spans (0.01–0.1 ms) and **no downstream database/dependency span** — the error originates inside the app, not from a slow/failing dependency.
-- `pod_restarts_1h: 0` rules out crash-looping; the app is up and deliberately erroring.
-
-This is Medium (not High) confidence because the evidence does not include the actual injection config, feature flag, or a log line explicitly stating an injected fault; the `/chaos/errors` endpoint and uniform signature are strong but circumstantial.
+**Confidence: Medium.** The trace span structure and uniform ~500 ms failure duration strongly indicate a handler-level dependency failure, but the evidence contains no error message text, no named downstream service, and no dependency-side metrics/logs, so the exact failing component and reason (timeout vs. injected fault vs. bad config) cannot be pinned down.
 
 ## Evidence
-- **Metrics:** `error_ratio_5m: 1.0` (100% errors, last 5m), `error_ratio_1h: 0.10364`, `burn_rate_5m: 200.0`, `burn_rate_1h: 20.73`, `availability_ratio_30d: 0.9653`, `error_budget_remaining_30d: -5.93973`, `request_rate_5m: 0.63509` rps, `pod_restarts_1h: 0.0`.
-- **Alert:** `OrdersApiErrorBudgetFastBurn` — "5xx ratio on /api/orders exceeds 7.2% over both the 1h and 5m windows… budget exhausted in ~2 days," `activeAt 2026-07-23T11:41:16.327Z`.
-- **Logs (all `status: 500`, `path /api/orders`, GET and POST):** e.g. `trace_id c75b6f2c61a12536a24cfc94a4e9897f` (POST, 602.79 ms, 11:37:04Z); `trace_id 1a6d29f3568512b7d34c0fef9f0ba42c` (POST, 505.05 ms, 11:41:32Z); `trace_id 3ffff07aef925bf171daae3e11aa92e7` (GET, 502.02 ms, 11:41:50Z). 200 lines returned, all 500s clustered ~500 ms.
-- **Traces:** `POST /chaos/errors` (`fd1de625301b1a957702d2540f7ffe03`, 1339 ms) in `slow_traces`; errored traces `686323b567363ae4845d6eadbed54f44` (521 ms), `cfc2532d437a2d0b2166c5ff52fcae1` (501 ms), `46e6384a66e11b3fb1fcf7c0233c1264` (POST, 501 ms), `999c003796de99bf08631fac74c320aa` (POST, 520 ms). Span breakdown: root `/api/orders` spans marked `STATUS_CODE_ERROR`, no dependency spans.
-- **Kubernetes:** `Pod/orders-api-84dbfcdd9b-gltm4` Readiness probe failed x17 (`context deadline exceeded`, last 11:24:13Z) and Liveness x11 (last 11:40:05Z); `Pod/orders-api-84dbfcdd9b-h6p6x` Readiness x19 (last 11:37:07Z) and Liveness x10 (last 11:24:07Z). Both `orders-api` pods report `restarts: 0`.
+- **Metrics:** `error_ratio_5m: 0.75701`, `error_ratio_1h: 0.75701`, `burn_rate_5m/1h: 151.4`, `availability_ratio_30d: 0.24299`, `error_budget_remaining_30d: -150.40179`, `request_rate_5m: 0.45112`, `pod_restarts_1h: 0.0`.
+- **Alert:** `OrdersApiErrorBudgetFastBurn` (critical, activeAt `2026-07-23T18:14:32.780Z`): ">14.4x" burn, budget exhausted "in ~2 days."
+- **Logs (Loki, 118 matches for `status >= 500`):** all sampled lines are `status: 500` on `/api/orders`, both methods, e.g.:
+  - `GET` `500` `duration_ms 522.95` trace_id `8339d192a8dc32d4b904a10708022bb3` @ 18:13:50
+  - `POST` `500` `duration_ms 503.07` trace_id `20f29d5cf12912a63a317ca2313e8531` @ 18:12:57
+  - `GET` `500` `duration_ms 500.54` trace_id `71c29fb424223f8699e3ef1f1776a119` @ 18:12:23
+- **Traces:** errored root spans `GET /api/orders` / `POST /api/orders` (e.g., `994988a9ec2b50ed28a614eb6c1673fd`, `572da1b5da5379a676139f699a8172ee`, `2ff506d2c79bd1af9eb422ba00215f46`); span breakdown for `994988a9...` shows root `STATUS_CODE_ERROR` at 503.8 ms with a child `http send` `STATUS_CODE_ERROR`.
+- **Kubernetes:** Warning events on both `orders-api-84dbfcdd9b-c9gcw` and `-rxdgs` — connection-refused then `context deadline exceeded` on `/healthz` and `/readyz` (17:51–17:55). Note `ClusterIPNotAllocated` on `Service/orders-api` ("10.43.216.101 is not allocated; repairing"), timestamp `None`.
 
 ## Blast Radius
-- **Service:** `orders-api` in namespace `apps` — both replicas affected (`orders-api-84dbfcdd9b-gltm4` and `-h6p6x` show probe failures).
-- **Endpoints:** Both `GET` and `POST /api/orders` returning 500 (confirmed in logs and traces), i.e. order reads and writes are failing.
-- **User impact:** Effectively total for the current 5-minute window (`error_ratio_5m: 1.0`); over the trailing hour ~10.4% of requests failed. Traffic volume is low (`~0.64 rps`), so absolute request count is modest, but the SLO is fully breached and error budget is negative.
-- The three control-plane alerts (`KubeProxyDown`, `KubeScheduler/ControllerManagerDown`, `KubeAPIErrorBudgetBurn`) are cluster-wide monitoring/control-plane concerns; there is no evidence linking them to the `orders-api` 500s.
+- Both `orders-api` replicas (`orders-api-84dbfcdd9b-c9gcw` and `-rxdgs`) — the entire serving fleet (2 pods).
+- Both endpoints affected: GET and POST `/api/orders` (500s observed for both methods).
+- ~75.7% of all `/api/orders` traffic is failing; at the observed request rate of `0.45112` rps this is a low-volume (likely test/load-generator, per pod `load-generator-68c64b46bf-dsfxl`) environment, but proportionally the service is effectively unusable and the 30-day SLO is already blown (availability `24.3%`, budget `-150`).
 
 ## Remediation
 **Immediate:**
-- Verify and disable any active chaos/error-injection targeting `orders-api` (check the `/chaos/errors` endpoint / associated flag or config). If confirmed, halting the experiment should immediately drop `error_ratio_5m`.
-- If injection cannot be confirmed quickly, roll back/redeploy `orders-api` to the last known-good revision and watch `error_ratio_5m` and probe status.
-- Confirm recovery via `/readyz` and `/healthz` returning within timeout and `error_ratio_5m` trending to ~0.
+- Identify the downstream call in the `/api/orders` handler surfaced by the errored `http send` child spans (start from trace `994988a9ec2b50ed28a614eb6c1673fd`) and verify that dependency's health/connectivity.
+- Investigate the `Service/orders-api` `ClusterIPNotAllocated` event ("10.43.216.101 is not allocated; repairing") to rule out a networking/service-routing fault contributing to the failed calls.
+- If a recent deploy/config change to `orders-api` or its dependency preceded 18:11, roll it back (deploy history not in this bundle — see gaps).
 
 **Preventive:**
-- Gate chaos experiments behind explicit environment guards so they cannot run against a production SLO-bound service, and emit a distinct, greppable log/metric when fault injection is active.
-- Add an alert/annotation that surfaces active chaos experiments on the same dashboard as SLO burn to avoid ambiguous pages.
-- Tune liveness/readiness probes and add a synthetic canary on `/api/orders` so injected/real failures are caught before budget burn reaches 200x.
-- Investigate the separately-firing control-plane alerts (`KubeProxyDown`, etc., active since 06:16Z) independently.
+- Add explicit error logging (message/exception + dependency name) on the 500 path; current logs record only `status: 500` with no cause.
+- Add circuit breaking / bounded retries and a dependency-availability SLO/alert so downstream failures are detected before they saturate `/api/orders`.
+- Tune probes: the 17:51–17:55 liveness/readiness timeouts did not lead to restarts (`pod_restarts_1h: 0.0`); confirm probe thresholds and whether unhealthy pods should be restarted or removed from endpoints.
 
 ## What I could not determine
-- **Definitive confirmation of injection:** No log line, config, or annotation explicitly states a fault was injected; the `/chaos/errors` trace and uniform ~500 ms signature are strong but circumstantial. The actual error message/exception for the 500s is **not** in the evidence (logs are `event: request` summaries only).
-- **Who/what triggered `/chaos/errors`** (operator, scheduled job, load-generator) is unknown; the `load-generator` pod exists but its request payloads are not shown.
-- **Onset time of the 500s** — the log/trace window starts at 11:36:38Z, but `error_ratio_1h` of 10.4% implies failures began earlier in the hour; the exact start is not captured.
-- **Relationship (if any) between the probe failures at 11:24Z and the 500s** — probes time out with `context deadline exceeded`, but with `restarts: 0` I cannot tell whether the app was saturated or the health endpoints were themselves affected by the same fault.
-- **Whether the control-plane alerts contributed** — no evidence connects `KubeProxyDown`/scheduler/controller-manager or `KubeAPIErrorBudgetBurn` to the `orders-api` errors; cannot conclude either way.
+- **The specific failing dependency and error reason** — logs carry no error text and traces name only a generic `http send` child span; no downstream service, status code, or exception is provided.
+- **Whether a deploy/config change triggered this** — no deployment, image-tag, or change-event data is in the bundle.
+- **The link between the 17:51–17:55 probe failures and the 18:11+ 500s** — there is a ~15-minute gap and no restarts, so it is unclear whether these are the same fault or two distinct events.
+- **True production impact** — request rate is very low (`0.45` rps) with a `load-generator` pod present, suggesting a test environment; real user impact cannot be confirmed from this data.
+- **The `ClusterIPNotAllocated` event significance** — it has a null count and `None` timestamp, so it may be historical/benign rather than active.
