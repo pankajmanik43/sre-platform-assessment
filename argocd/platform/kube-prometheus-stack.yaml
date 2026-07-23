@@ -12,11 +12,15 @@ spec:
     helm:
       valuesObject:
         prometheusOperator:
+          # The admission webhook's serving cert is provisioned by Helm hook Jobs;
+          # under ArgoCD + a saturated cold bootstrap the cert/caBundle can mismatch
+          # ("tls: bad certificate") and stall CR reconciliation. Disable the whole
+          # webhook subsystem — it's validation-only; the operator still validates
+          # CRs at reconcile time. tls.enabled:false also drops the operator's
+          # tls-secret volume mount (else the pod FailedMount on the absent secret).
+          tls:
+            enabled: false
           admissionWebhooks:
-            # validation-only webhook whose serving cert is set up by Helm hook Jobs;
-            # under ArgoCD + a saturated cold bootstrap the cert/caBundle can mismatch
-            # ("tls: bad certificate"), stalling CR reconciliation. Disable it — the
-            # operator still validates CRs at reconcile time.
             enabled: false
         grafana:
           adminPassword: admin123   # fine for a local assessment
